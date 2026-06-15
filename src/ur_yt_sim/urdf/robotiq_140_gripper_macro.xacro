@@ -1,0 +1,59 @@
+<?xml version="1.0"?>
+<robot xmlns:xacro="http://wiki.ros.org/xacro" name="robotiq_140_gripper">
+    <xacro:macro name="robotiq_140_gripper" params="
+        name
+        prefix
+        parent
+        *origin
+        sim_gazebo:=false
+        sim_ignition:=false
+        sim_isaac:=false
+        isaac_joint_commands:=/isaac_joint_commands
+        isaac_joint_states:=/isaac_joint_states
+        use_fake_hardware:=false
+        mock_sensor_commands:=false
+        include_ros2_control:=true
+        com_port:=/dev/ttyUSB0
+        gripper_speed_multiplier:=1.0
+        gripper_force_multiplier:=0.5
+        gripper_max_speed:=0.150
+        gripper_max_force:=235.0
+        gripper_closed_position:=0.7">
+
+        <!-- Include the 140 model macro -->
+        <xacro:include filename="$(find ur_yt_sim)/urdf/robotiq_2f_140/robotiq_arg2f_140_model_macro.xacro" />
+        
+        <!-- Include the ros2 control macro for 140 -->
+        <xacro:include filename="$(find ur_yt_sim)/urdf/robotiq_140_gripper.ros2_control.xacro" />
+
+        <!-- Instantiate the gripper model -->
+        <xacro:robotiq_arg2f_140 prefix="${prefix}" />
+
+        <!-- Attach the gripper base to the parent link -->
+        <joint name="${prefix}robotiq_140_base_joint" type="fixed">
+            <parent link="${parent}" />
+            <child link="${prefix}robotiq_arg2f_base_link" />
+            <xacro:insert_block name="origin" />
+        </joint>
+
+        <!-- Instantiate the ros2 control configuration -->
+        <xacro:if value="${include_ros2_control}">
+            <xacro:robotiq_140_gripper_ros2_control
+                name="${name}" prefix="${prefix}"
+                sim_gazebo="${sim_gazebo}"
+                sim_ignition="${sim_ignition}"
+                sim_isaac="${sim_isaac}"
+                isaac_joint_commands="${isaac_joint_commands}"
+                isaac_joint_states="${isaac_joint_states}"
+                use_fake_hardware="${use_fake_hardware}"
+                mock_sensor_commands="${mock_sensor_commands}"
+                com_port="${com_port}"
+                gripper_speed_multiplier="${gripper_speed_multiplier}"
+                gripper_force_multiplier="${gripper_force_multiplier}"
+                gripper_max_speed="${gripper_max_speed}"
+                gripper_max_force="${gripper_max_force}"
+                gripper_closed_position="${gripper_closed_position}"/>
+        </xacro:if>
+
+    </xacro:macro>
+</robot>

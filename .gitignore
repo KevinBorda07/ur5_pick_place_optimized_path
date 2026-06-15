@@ -1,0 +1,25 @@
+# ROS 2 build and install artifacts
+build/
+install/
+log/
+
+# OS-specific files
+.DS_Store
+Thumbs.db
+
+# VS Code workspace settings
+.vscode/
+
+# Logs and temporary files
+*.log
+*.pid
+*.xwd
+*.webm
+*.png
+*.jpg
+*.mp4
+*.bag
+*.db3
+*~
+.swp
+.swo
