@@ -9,10 +9,7 @@
 
 set -e
 
-echo "================================================"
-echo "  UR5 Pick-and-Place Gazebo Cleanup"
-echo "================================================"
-echo ""
+
 
 # Kill gzserver processes
 if pgrep -f "gzserver" > /dev/null 2>&1; then
@@ -59,8 +56,4 @@ else
     echo "    ✓ All Gazebo processes cleaned up successfully"
 fi
 
-echo ""
-echo "================================================"
-echo "  Cleanup Complete"
-echo "================================================"
-echo ""
+
