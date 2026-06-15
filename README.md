@@ -79,10 +79,11 @@ If Gazebo processes lock up or crash, run the helper script in the workspace roo
 ## 📹 Demo Videos
 
 ### Phase 1: Without Obstacle
-![](src/Output/without%20obstacle.mp4)
+![](src/Output/without_obstacle.mp4)
 
 ### Phase 2: With Obstacle (Dynamic Obstacle Avoidance)
-![](src/Output/with%20obstacle.mp4)
+![](src/Output/with_obstacle.mp4)
+
 
 
 ---
