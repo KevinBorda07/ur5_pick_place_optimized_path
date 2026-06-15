@@ -57,7 +57,7 @@ Follow these steps to launch the simulation and run the pick-and-place task.
 ### Step 1: Start the Gazebo & MoveIt Environment
 Launch the simulation, controllers, planning scene, and RViz:
 ```bash
-ros2 launch ur_yt_sim spawn_ur5_camera_gripper_moveit.launch.py x:=0 y:=0 z:=1.015
+ros2 launch ur_yt_sim spawn_ur5_camera_gripper_moveit.launch.py
 ```
 
 ### Step 2: Run the Pick-and-Place Task
@@ -73,6 +73,7 @@ If Gazebo processes lock up or crash, run the helper script in the workspace roo
 ./cleanup_gazebo.sh
 ```
 
+
 ---
 
 ## 📹 Demo Videos
@@ -85,8 +86,8 @@ If Gazebo processes lock up or crash, run the helper script in the workspace roo
 
 ---
 
-
 ## ⚙️ Technical Details
+
 
 > [!NOTE]
 > **Mimic Joint Warnings:**
