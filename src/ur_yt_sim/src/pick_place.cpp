@@ -108,12 +108,12 @@ public:
     void close_gripper()
     {
         RCLCPP_INFO(logger, "Closing gripper...");
-        // Stage 1: pre-grasp — close to 0.45 (close to cube faces)
+        // Pre-grasp close
         send_gripper_goal(0.45, 10.0, false);
         std::this_thread::sleep_for(std::chrono::milliseconds(600));
-        // Stage 2: final close — non-blocking to prevent Gazebo contact jitter
+        // Force contact
         send_gripper_goal(0.48, 10.0, false);
-        std::this_thread::sleep_for(std::chrono::milliseconds(200)); // wait just 200ms for contact onset before attaching
+        std::this_thread::sleep_for(std::chrono::milliseconds(200));
     }
 
     void open_gripper()
@@ -140,22 +140,21 @@ public:
         move_group.setGoalTolerance(0.01);
 
         tf2::Quaternion orientation;
-        orientation.setRPY(-3.1415, 0, 0.0); // Gripper pointing straight down, yaw=0 to avoid wrist singularity
+        orientation.setRPY(-3.1415, 0, 0.0);
 
-        // ── Stage 1 & 2: Move to hover and Cartesian straight-down descent ────────
         geometry_msgs::msg::Pose hover_pose;
         hover_pose.orientation = tf2::toMsg(orientation);
         hover_pose.position.x = 0.50;
         hover_pose.position.y = 0.0;
-        hover_pose.position.z = 1.50; // 25 cm clear above pick height
+        hover_pose.position.z = 1.50;
 
         geometry_msgs::msg::Pose pick_pose;
         pick_pose.orientation = tf2::toMsg(orientation);
         pick_pose.position.x = 0.50;
         pick_pose.position.y = 0.0;
-        pick_pose.position.z = 1.25; // pick height
+        pick_pose.position.z = 1.25;
 
-        // 1. Plan a joint-space trajectory directly to pick_pose first
+        // Plan joint trajectory to pick pose
         move_group.setPoseTarget(pick_pose, "wrist_3_link");
         moveit::planning_interface::MoveGroupInterface::Plan pick_plan;
         bool plan_ok = (move_group.plan(pick_plan) == moveit::core::MoveItErrorCode::SUCCESS);
@@ -164,15 +163,15 @@ public:
             return false;
         }
 
-        // 2. Extract q_pick (the target joint values at the pick pose)
+        // Get joint values at pick pose
         std::vector<double> q_pick = pick_plan.trajectory_.joint_trajectory.points.back().positions;
 
-        // 3. Temporarily set start state of move_group to q_pick
+        // Set start state to target
         moveit::core::RobotState temp_state(*move_group.getCurrentState());
         temp_state.setJointGroupPositions("ur5_manipulator", q_pick);
         move_group.setStartState(temp_state);
 
-        // 4. Plan a Cartesian path UPWARDS to hover_pose
+        // Plan linear path to hover pose
         std::vector<geometry_msgs::msg::Pose> waypoints_up;
         waypoints_up.push_back(hover_pose);
         moveit_msgs::msg::RobotTrajectory traj_up;
@@ -186,10 +185,10 @@ public:
         bool cartesian_success = false;
 
         if (fraction_up > 0.99) {
-            // 5. Extract q_hover
+            // Get joint values at hover pose
             q_hover = traj_up.joint_trajectory.points.back().positions;
 
-            // 6. Plan the downwards Cartesian path from q_hover to pick_pose
+            // Plan linear path to pick pose
             temp_state.setJointGroupPositions("ur5_manipulator", q_hover);
             move_group.setStartState(temp_state);
 
@@ -204,12 +203,11 @@ public:
             }
         }
 
-        // Reset start state to current state
+        // Reset start state
         move_group.setStartStateToCurrentState();
 
         if (cartesian_success) {
             RCLCPP_INFO(logger, "Cartesian descent planning SUCCESS. Moving to q_hover...");
-            // Plan to q_hover in joint space
             move_group.setJointValueTarget(q_hover);
             moveit::planning_interface::MoveGroupInterface::Plan plan_to_hover;
             if (move_group.plan(plan_to_hover) == moveit::core::MoveItErrorCode::SUCCESS) {
@@ -219,15 +217,15 @@ public:
                 return false;
             }
 
-            // Open gripper wider before descent
+            // Open gripper
             send_gripper_goal(0.0, 10.0, true);
 
-            // Remove cube from collision scene
+            // Remove collision object
             std::vector<std::string> obj_to_remove = {"cube_pick"};
             planning_scene_interface.removeCollisionObjects(obj_to_remove);
             std::this_thread::sleep_for(std::chrono::milliseconds(300));
 
-            // Execute descent Cartesian trajectory
+            // Execute descent
             RCLCPP_INFO(logger, "Executing Cartesian descent straight down...");
             moveit::planning_interface::MoveGroupInterface::Plan descent_plan;
             descent_plan.trajectory_ = traj_down;
@@ -236,7 +234,7 @@ public:
             RCLCPP_WARN(logger, "Cartesian descent planning failed, falling back to default pose planning");
             move_group.setStartStateToCurrentState();
             
-            // Fallback: move to hover_pose normally
+            // Fallback to joint planning
             move_group.setPoseTarget(hover_pose, "wrist_3_link");
             move_group.move();
 
@@ -246,26 +244,25 @@ public:
             planning_scene_interface.removeCollisionObjects(obj_to_remove);
             std::this_thread::sleep_for(std::chrono::milliseconds(300));
 
-            // Move to pick_pose normally
             move_group.setPoseTarget(pick_pose, "wrist_3_link");
             move_group.move();
         }
         RCLCPP_INFO(logger, "Pick motion execution completed.");
 
-        // ── Stage 3: Gentle grasping sequence ─────────────────────────────────────
+        // Grasping sequence
         RCLCPP_INFO(logger, "Closing gripper to pre-grasp position (0.46)...");
         send_gripper_goal(0.46, 5.0, true);
         std::this_thread::sleep_for(std::chrono::milliseconds(300));
 
-        RCLCPP_INFO(logger, "Attaching object before final contact to prevent displacement...");
+        RCLCPP_INFO(logger, "Attaching object...");
         attachObject();
         std::this_thread::sleep_for(std::chrono::milliseconds(500));
 
-        RCLCPP_INFO(logger, "Closing gripper gently to contact position (0.52) with low effort...");
+        RCLCPP_INFO(logger, "Closing gripper gently to contact position (0.52)...");
         send_gripper_goal(0.52, 2.0, false);
         std::this_thread::sleep_for(std::chrono::milliseconds(600));
 
-        // Attach cube to MoveIt planning scene (now attached to robot)
+        // Attach collision object
         moveit_msgs::msg::AttachedCollisionObject aco;
         aco.link_name = "wrist_3_link";
         aco.object.id = "cube_pick";
@@ -276,7 +273,7 @@ public:
         aco.object.primitive_poses.resize(1);
         aco.object.primitive_poses[0].position.x = 0.0;
         aco.object.primitive_poses[0].position.y = 0.0;
-        aco.object.primitive_poses[0].position.z = 0.20; // 20cm below tool0 flange
+        aco.object.primitive_poses[0].position.z = 0.20;
         aco.object.primitive_poses[0].orientation.w = 1.0;
         aco.object.operation = moveit_msgs::msg::CollisionObject::ADD;
         aco.touch_links = {"wrist_3_link", "left_inner_finger", "left_inner_finger_pad",
@@ -289,13 +286,13 @@ public:
         RCLCPP_INFO(logger, "Cube attached to MoveIt planning scene.");
         std::this_thread::sleep_for(0.5s);
 
-        // ── Stage 4: Lift clear of table ──────────────────────────────────────────
+        // Lift arm
         RCLCPP_INFO(logger, "Lifting after pick...");
         geometry_msgs::msg::Pose lift_pose;
         lift_pose.orientation = tf2::toMsg(orientation);
         lift_pose.position.x = 0.50;
         lift_pose.position.y = 0.0;
-        lift_pose.position.z = 1.50; // Clear of table
+        lift_pose.position.z = 1.50;
         move_group.setPoseTarget(lift_pose, "wrist_3_link");
         auto lift_result = move_group.move();
         if (lift_result != moveit::core::MoveItErrorCode::SUCCESS) {
@@ -305,7 +302,7 @@ public:
         return true;
     }
 
-    // Allow or disallow collision between gripper finger links and 'table1' in the planning scene ACM
+    // Allow or disallow gripper-table collision
     void allowGripperTableCollision(bool allow)
     {
         moveit_msgs::msg::PlanningScene scene_diff;
@@ -326,14 +323,15 @@ public:
             acm.entry_names.push_back(link);
         }
 
-        // Build matrix: 1 = allow, 0 = check
+        // Build allowed collision matrix
         size_t n = acm.entry_names.size();
         for (size_t i = 0; i < n; ++i) {
             moveit_msgs::msg::AllowedCollisionEntry row;
             row.enabled.resize(n, false);
             acm.entry_values.push_back(row);
         }
-        // table1 (index 0) vs all gripper links: allow
+        
+        // Set allowed entries
         for (size_t j = 1; j < n; ++j) {
             acm.entry_values[0].enabled[j] = allow;
             acm.entry_values[j].enabled[0] = allow;
@@ -342,14 +340,14 @@ public:
         scene_diff.allowed_collision_matrix = acm;
 
         auto ps_pub = node_->create_publisher<moveit_msgs::msg::PlanningScene>("/planning_scene", 1);
-        std::this_thread::sleep_for(100ms); // let publisher register
+        std::this_thread::sleep_for(100ms);
         ps_pub->publish(scene_diff);
         RCLCPP_INFO(logger, "ACM updated: gripper-table collision %s", allow ? "ALLOWED" : "RESTORED");
     }
 
     bool place()
     {
-        std::this_thread::sleep_for(1s); // Let robot settle after lift
+        std::this_thread::sleep_for(1s);
         move_group.setMaxVelocityScalingFactor(0.8);
         move_group.setMaxAccelerationScalingFactor(0.8);
         move_group.setPlanningTime(10.0);  
@@ -359,20 +357,20 @@ public:
 
         geometry_msgs::msg::Pose place_pose;
         tf2::Quaternion orientation;
-        orientation.setRPY(-3.1415, 0, 0.0); // yaw=0 to avoid wrist singularity
+        orientation.setRPY(-3.1415, 0, 0.0);
         place_pose.orientation = tf2::toMsg(orientation);
         place_pose.position.x = 0.60;
         place_pose.position.y = 0.40;
-        place_pose.position.z = 1.28; // Elevated slightly to remain safely within the UR5 arm's kinematic reach
+        place_pose.position.z = 1.28;
 
         move_group.setPoseTarget(place_pose, "wrist_3_link");
 
-        // Planning
+        // Plan
         moveit::planning_interface::MoveGroupInterface::Plan my_plan;
         bool success = (move_group.plan(my_plan) == moveit::core::MoveItErrorCode::SUCCESS);
         RCLCPP_INFO(logger, "Visualizing place plan: %s", success ? "SUCCESS" : "FAILED");
 
-        // Execution
+        // Execute
         if (success)
         {
             move_group.move();
@@ -427,7 +425,7 @@ public:
             RCLCPP_ERROR(logger, "Failed to detach object.");
         }
 
-        // Remove attached object from MoveIt planning scene
+        // Detach from MoveIt
         moveit_msgs::msg::AttachedCollisionObject aco;
         aco.link_name = "wrist_3_link";
         aco.object.id = "cube_pick";
@@ -449,11 +447,11 @@ public:
         collision_objects[0].primitive_poses.resize(1);
         collision_objects[0].primitive_poses[0].position.x = 0.7168;
         collision_objects[0].primitive_poses[0].position.y = -0.0053;
-        collision_objects[0].primitive_poses[0].position.z = 0.5075; // Top surface exactly at z=1.015
+        collision_objects[0].primitive_poses[0].position.z = 0.5075;
         collision_objects[0].primitive_poses[0].orientation.w = 1.0;
         collision_objects[0].operation = moveit_msgs::msg::CollisionObject::ADD;
 
-        // Green cube (pick target) - add so planner knows where it is
+        // Target cube
         collision_objects[1].id = "cube_pick";
         collision_objects[1].header.frame_id = "world";
         collision_objects[1].primitives.resize(1);
@@ -462,7 +460,7 @@ public:
         collision_objects[1].primitive_poses.resize(1);
         collision_objects[1].primitive_poses[0].position.x = 0.5;
         collision_objects[1].primitive_poses[0].position.y = 0.0;
-        collision_objects[1].primitive_poses[0].position.z = 1.035; // Sitting exactly on table top (1.015 + 0.02)
+        collision_objects[1].primitive_poses[0].position.z = 1.035;
         collision_objects[1].primitive_poses[0].orientation.w = 1.0;
         collision_objects[1].operation = moveit_msgs::msg::CollisionObject::ADD;
 
@@ -502,10 +500,10 @@ public:
   </model>
 </sdf>
 )";
-        // Place the obstacle directly in the path between (0.5, 0) and (0.6, 0.4)
+        // Obstacle position
         request->initial_pose.position.x = 0.55;
         request->initial_pose.position.y = 0.20;
-        request->initial_pose.position.z = 1.165; // Sitting on the table top (1.015 + 0.15)
+        request->initial_pose.position.z = 1.165;
         request->initial_pose.orientation.w = 1.0;
 
         if (call_service(spawn_client, request, "/spawn_entity")) {
@@ -514,7 +512,7 @@ public:
             RCLCPP_ERROR(logger, "Failed to spawn obstacle.");
         }
 
-        // Add to MoveIt planning scene
+        // MoveIt planning scene
         moveit_msgs::msg::CollisionObject collision_object;
         collision_object.header.frame_id = "world";
         collision_object.id = "obstacle_box";
@@ -547,7 +545,7 @@ public:
 
         call_service(delete_client, request, "/delete_entity");
 
-        // Remove from MoveIt planning scene
+        // Remove from MoveIt
         std::vector<std::string> ids = {"obstacle_box"};
         planning_scene_interface.removeCollisionObjects(ids);
         RCLCPP_INFO(logger, "Obstacle removed from MoveIt planning scene.");
@@ -583,7 +581,7 @@ public:
             RCLCPP_ERROR(logger, "Failed to teleport green cube pose.");
         }
 
-        // Re-add/update cube in MoveIt planning scene
+        // Update planning scene
         moveit_msgs::msg::CollisionObject cube_obj;
         cube_obj.id = "cube_pick";
         cube_obj.header.frame_id = "world";
@@ -598,7 +596,7 @@ public:
         cube_obj.operation = moveit_msgs::msg::CollisionObject::ADD;
         planning_scene_interface.applyCollisionObjects({cube_obj});
 
-        std::this_thread::sleep_for(1s); // Allow cube to fully settle
+        std::this_thread::sleep_for(1s);
         RCLCPP_INFO(logger, "Green cube reset completed.");
     }
 
@@ -621,64 +619,56 @@ int main(int argc, char **argv)
 {
     rclcpp::init(argc, argv);
     
-    // Construct node with overrides enabled to correctly read launch parameters
+    // Create node with parameter overrides
     rclcpp::NodeOptions node_options;
     node_options.automatically_declare_parameters_from_overrides(true);
     auto node = std::make_shared<rclcpp::Node>("pick_and_place_node", node_options);
 
-    // Spin node in background thread so MoveGroupInterface receives topic updates
+    // Spin node in background
     std::thread spin_thread([node]() {
         rclcpp::spin(node);
     });
 
     PickAndPlace pap(node);
 
-    // Initial state setup
-    pap.detachObject(); // Clean up any previously attached object
+    // Initial setup
+    pap.detachObject();
     pap.open_gripper();
-    pap.deleteObstacle(); // Make sure clean start
+    pap.deleteObstacle();
     pap.move_to_home();
     pap.addDefaultCollisionObjects();
     
     std::this_thread::sleep_for(1s);
 
-    // Reset cube to known position before Phase 1 (handles displaced cube from prior runs)
+    // Reset environment
     pap.resetCubePose();
 
-    // ==========================================
-    // PHASE 1: WITHOUT OBSTACLE
-    // ==========================================
-    RCLCPP_INFO(rclcpp::get_logger("main"), "==========================================");
-    RCLCPP_INFO(rclcpp::get_logger("main"), "STARTING PHASE 1: WITHOUT OBSTACLE");
-    RCLCPP_INFO(rclcpp::get_logger("main"), "==========================================");
+    // Phase 1: Without Obstacle
+    RCLCPP_INFO(rclcpp::get_logger("main"), "Starting Phase 1: Without Obstacle");
 
     if (pap.pick()) {
         pap.place();
     }
     pap.move_to_home();
 
-    RCLCPP_INFO(rclcpp::get_logger("main"), "PHASE 1 COMPLETED. Resting...");
+    RCLCPP_INFO(rclcpp::get_logger("main"), "Phase 1 Completed.");
     std::this_thread::sleep_for(5s);
 
     // Reset environment
-    pap.detachObject(); // Safe detach if needed
+    pap.detachObject();
     pap.open_gripper();
     pap.resetCubePose();
     std::this_thread::sleep_for(2s);
 
-    // ==========================================
-    // PHASE 2: WITH OBSTACLE
-    // ==========================================
-    RCLCPP_INFO(rclcpp::get_logger("main"), "==========================================");
-    RCLCPP_INFO(rclcpp::get_logger("main"), "STARTING PHASE 2: WITH OBSTACLE");
-    RCLCPP_INFO(rclcpp::get_logger("main"), "==========================================");
+    // Phase 2: With Obstacle
+    RCLCPP_INFO(rclcpp::get_logger("main"), "Starting Phase 2: With Obstacle");
 
     pap.spawnObstacle();
     std::this_thread::sleep_for(2s);
 
     pap.move_to_home();
     if (pap.pick()) {
-        pap.place(); // MoveIt will plan around the spawned obstacle!
+        pap.place();
     }
     pap.move_to_home();
 
@@ -686,9 +676,7 @@ int main(int argc, char **argv)
     pap.deleteObstacle();
     std::this_thread::sleep_for(1s);
 
-    RCLCPP_INFO(rclcpp::get_logger("main"), "==========================================");
-    RCLCPP_INFO(rclcpp::get_logger("main"), "ALL PHASES COMPLETED SUCCESSFULLY!");
-    RCLCPP_INFO(rclcpp::get_logger("main"), "==========================================");
+    RCLCPP_INFO(rclcpp::get_logger("main"), "All phases completed successfully.");
 
     rclcpp::shutdown();
     if (spin_thread.joinable()) {
