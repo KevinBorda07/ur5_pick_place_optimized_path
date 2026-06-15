@@ -23,3 +23,8 @@ Thumbs.db
 *~
 .swp
 .swo
+
+# Exceptions for demo videos
+!src/Output/*.mp4
+!src/Output/*.webm
+
