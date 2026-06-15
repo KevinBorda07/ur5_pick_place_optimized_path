@@ -28,3 +28,7 @@ Thumbs.db
 !src/Output/*.mp4
 !src/Output/*.webm
 
+# Local project summary
+project_summary.md
+
+
